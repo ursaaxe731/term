@@ -87,7 +87,7 @@ $result = [Win32]::CreateProcessWithTokenW(
     $null,
     0,
     [IntPtr]::Zero,
-    $env:windir,
+    [IntPtr]::Zero,
     [ref]$si,
     [ref]$pi
 )
