@@ -97,7 +97,7 @@ function Start-UserProcess {
     $pi = New-Object Native+PROCESS_INFORMATION
 
     # Important stability settings
-    $workingDir = $env:windir   # Prevent ERROR_INVALID_DIRECTORY (267)
+    $workingDir = "C:\Windows"   # Prevent ERROR_INVALID_DIRECTORY (267)
     $exePath = $Exe             # Must be absolute path
 
     # Create process using duplicated user token
