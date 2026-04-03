@@ -87,13 +87,13 @@ $result = [Win32]::CreateProcessWithTokenW(
     $null,
     0,
     [IntPtr]::Zero,
-    "C:\Windows\System32",
+    $env:windir,
     [ref]$si,
     [ref]$pi
 )
 
 if ($result) {
-    Write-Host "성공: 사용자 권한으로 실행됨"
+    Write-Host "Success"
 } else {
-    Write-Host "실패: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+    Write-Host "Failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
 }
