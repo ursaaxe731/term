@@ -1,0 +1,99 @@
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public class Win32 {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr OpenProcess(UInt32 access, bool inherit, int pid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool OpenProcessToken(IntPtr ProcessHandle, UInt32 DesiredAccess, out IntPtr TokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool DuplicateTokenEx(
+        IntPtr hExistingToken,
+        UInt32 dwDesiredAccess,
+        IntPtr lpTokenAttributes,
+        int ImpersonationLevel,
+        int TokenType,
+        out IntPtr phNewToken);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool CreateProcessWithTokenW(
+        IntPtr hToken,
+        int dwLogonFlags,
+        string lpApplicationName,
+        string lpCommandLine,
+        int dwCreationFlags,
+        IntPtr lpEnvironment,
+        string lpCurrentDirectory,
+        ref STARTUPINFO lpStartupInfo,
+        out PROCESS_INFORMATION lpProcessInformation);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct STARTUPINFO {
+        public int cb;
+        public string lpReserved;
+        public string lpDesktop;
+        public string lpTitle;
+        public int dwX, dwY, dwXSize, dwYSize;
+        public int dwXCountChars, dwYCountChars;
+        public int dwFillAttribute;
+        public int dwFlags;
+        public short wShowWindow;
+        public short cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput, hStdOutput, hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_INFORMATION {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public int dwProcessId;
+        public int dwThreadId;
+    }
+}
+"@
+
+# explorer.exe PID 가져오기
+$proc = Get-Process explorer | Select-Object -First 1
+if (-not $proc) {
+    Write-Host "explorer not found"
+    return
+}
+
+# 프로세스 핸들
+$hProcess = [Win32]::OpenProcess(0x0400, $false, $proc.Id)
+
+# 토큰 열기
+$hToken = [IntPtr]::Zero
+[Win32]::OpenProcessToken($hProcess, 0x0002 -bor 0x0008 -bor 0x0001, [ref]$hToken) | Out-Null
+
+# 토큰 복제
+$hDupToken = [IntPtr]::Zero
+[Win32]::DuplicateTokenEx($hToken, 0x10000000, [IntPtr]::Zero, 2, 1, [ref]$hDupToken) | Out-Null
+
+# 프로세스 실행
+$si = New-Object Win32+STARTUPINFO
+$si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
+
+$pi = New-Object Win32+PROCESS_INFORMATION
+
+$result = [Win32]::CreateProcessWithTokenW(
+    $hDupToken,
+    0,
+    "C:\Windows\System32\notepad.exe",
+    $null,
+    0,
+    [IntPtr]::Zero,
+    "C:\Windows\System32",
+    [ref]$si,
+    [ref]$pi
+)
+
+if ($result) {
+    Write-Host "성공: 사용자 권한으로 실행됨"
+} else {
+    Write-Host "실패: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+}
