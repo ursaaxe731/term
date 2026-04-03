@@ -2,7 +2,7 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 
-public class Win32 {
+public class Native {
     [DllImport("kernel32.dll")]
     public static extern IntPtr OpenProcess(UInt32 access, bool inherit, int pid);
 
@@ -56,44 +56,76 @@ public class Win32 {
 }
 "@
 
-# explorer.exe PID 가져오기
-$proc = Get-Process explorer | Select-Object -First 1
-if (-not $proc) {
-    Write-Host "explorer not found"
-    return
+function Start-UserProcess {
+    param(
+        [string]$Exe = "C:\Windows\System32\notepad.exe",
+        [string]$Args = ""
+    )
+
+    # Find explorer process (used to match the logged-in user session)
+    $proc = Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $proc) {
+        Write-Host "❌ explorer.exe not found (user not logged in)"
+        return
+    }
+
+    # Open target process with required access rights
+    $hProcess = [Native]::OpenProcess(0x0400 -bor 0x0010, $false, $proc.Id)
+    if ($hProcess -eq [IntPtr]::Zero) {
+        Write-Host "❌ OpenProcess failed"
+        return
+    }
+
+    # Open process token
+    $hToken = [IntPtr]::Zero
+    if (-not [Native]::OpenProcessToken($hProcess, 0x0002 -bor 0x0008 -bor 0x0001, [ref]$hToken)) {
+        Write-Host "❌ OpenProcessToken failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+        return
+    }
+
+    # Duplicate token to create a primary token
+    $hDupToken = [IntPtr]::Zero
+    if (-not [Native]::DuplicateTokenEx($hToken, 0x10000000, [IntPtr]::Zero, 2, 1, [ref]$hDupToken)) {
+        Write-Host "❌ DuplicateTokenEx failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+        return
+    }
+
+    # Prepare structures for process creation
+    $si = New-Object Native+STARTUPINFO
+    $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
+
+    $pi = New-Object Native+PROCESS_INFORMATION
+
+    # Important stability settings
+    $workingDir = $env:windir   # Prevent ERROR_INVALID_DIRECTORY (267)
+    $exePath = $Exe             # Must be absolute path
+
+    # Create process using duplicated user token
+    $result = [Native]::CreateProcessWithTokenW(
+        $hDupToken,
+        0,
+        $exePath,
+        $Args,
+        0,
+        [IntPtr]::Zero,
+        $workingDir,
+        [ref]$si,
+        [ref]$pi
+    )
+
+    if ($result) {
+        Write-Host "✅ Success (PID: $($pi.dwProcessId))"
+    } else {
+        $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        Write-Host "❌ Failed: $err"
+
+        switch ($err) {
+            5   { Write-Host "→ Access Denied (permission issue)" }
+            1314 { Write-Host "→ Missing privilege" }
+            267 { Write-Host "→ Invalid working directory" }
+        }
+    }
 }
 
-# 프로세스 핸들
-$hProcess = [Win32]::OpenProcess(0x0400, $false, $proc.Id)
-
-# 토큰 열기
-$hToken = [IntPtr]::Zero
-[Win32]::OpenProcessToken($hProcess, 0x0002 -bor 0x0008 -bor 0x0001, [ref]$hToken) | Out-Null
-
-# 토큰 복제
-$hDupToken = [IntPtr]::Zero
-[Win32]::DuplicateTokenEx($hToken, 0x10000000, [IntPtr]::Zero, 2, 1, [ref]$hDupToken) | Out-Null
-
-# 프로세스 실행
-$si = New-Object Win32+STARTUPINFO
-$si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
-
-$pi = New-Object Win32+PROCESS_INFORMATION
-
-$result = [Win32]::CreateProcessWithTokenW(
-    $hDupToken,
-    0,
-    "C:\Windows\System32\notepad.exe",
-    $null,
-    0,
-    [IntPtr]::Zero,
-    [IntPtr]::Zero,
-    [ref]$si,
-    [ref]$pi
-)
-
-if ($result) {
-    Write-Host "Success"
-} else {
-    Write-Host "Failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
-}
+# Example execution
+Start-UserProcess
