@@ -53,7 +53,23 @@ public class Native {
         public int dwProcessId;
         public int dwThreadId;
     }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool CreateProcessAsUser(
+        IntPtr hToken,
+        string lpApplicationName,
+        string lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        bool bInheritHandles,
+        int dwCreationFlags,
+        IntPtr lpEnvironment,
+        string lpCurrentDirectory,
+        ref STARTUPINFO lpStartupInfo,
+        out PROCESS_INFORMATION lpProcessInformation);
 }
+
+
 "@
 
 function Start-UserProcess {
@@ -97,27 +113,28 @@ function Start-UserProcess {
     $pi = New-Object Native+PROCESS_INFORMATION
 
     # Important stability settings
-    $workingDir = "C:\Windows"   # Prevent ERROR_INVALID_DIRECTORY (267)
     $exePath = $Exe             # Must be absolute path
 
     # Create process using duplicated user token
-    $result = [Native]::CreateProcessWithTokenW(
+    $result = [Native]::CreateProcessAsUser(
         $hDupToken,
-        0,
         $exePath,
-        $Args,
-        0,
+        "",
         [IntPtr]::Zero,
-        $workingDir,
+        [IntPtr]::Zero,
+        $false,
+        0x08000000,
+        [IntPtr]::Zero,
+        [IntPtr]::Zero,
         [ref]$si,
         [ref]$pi
     )
 
     if ($result) {
-        Write-Host "✅ Success (PID: $($pi.dwProcessId))"
+        Write-Host "Success (PID: $($pi.dwProcessId))"
     } else {
         $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-        Write-Host "❌ Failed: $err"
+        Write-Host "Failed: $err"
 
         switch ($err) {
             5   { Write-Host "→ Access Denied (permission issue)" }
